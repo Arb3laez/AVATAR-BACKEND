@@ -74,7 +74,11 @@ Reglas estrictas:
 # ──────────────────────────────────────────────
 # FastAPI App + OpenAI Client
 # ──────────────────────────────────────────────
-app = FastAPI(title="Voice Agent con Simli Avatar")
+app = FastAPI(
+    title="Voice Agent con Simli Avatar",
+    root_path="/api"
+
+)
 
 app.add_middleware(
     CORSMiddleware,

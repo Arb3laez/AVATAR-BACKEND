@@ -18,6 +18,7 @@ COPY docs/ docs/
 
 # LiveKit agent listens on port 8081 for health checks
 EXPOSE 8081
+EXPOSE 8000
 
 # Start the agent
-CMD ["python", "agent.py", "start"]
+CMD ["./entrypoint.sh"]
