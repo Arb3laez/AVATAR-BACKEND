@@ -3,5 +3,8 @@ livekit-agents>=1.4.4
 livekit-plugins-openai>=1.0.0
 livekit-plugins-simli>=1.0.0
 
+# LiveKit Server SDK (token generation)
+livekit-api>=0.7.0
+
 # Utilities
 python-dotenv>=1.0.1

@@ -11,14 +11,19 @@ import re
 import base64
 import asyncio
 import logging
+import secrets
+from datetime import timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+from pydantic import BaseModel, Field
 import httpx
 from openai import AsyncOpenAI
+from livekit.api import AccessToken, VideoGrants
 
 # ──────────────────────────────────────────────
 # Configuracion
@@ -30,6 +35,9 @@ ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
 SIMLI_API_KEY = os.getenv("SIMLI_API_KEY", "")
 SIMLI_FACE_ID = os.getenv("SIMLI_FACE_ID", "")
+LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY", "")
+LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET", "")
+LIVEKIT_URL = os.getenv("LIVEKIT_URL", "")
 AGENT_NAME = os.getenv("AGENT_NAME", "Asistente Virtual")
 AGENT_LANGUAGE = os.getenv("AGENT_LANGUAGE", "es")
 
@@ -68,7 +76,27 @@ Reglas estrictas:
 # FastAPI App + OpenAI Client
 # ──────────────────────────────────────────────
 app = FastAPI(title="Voice Agent con Simli Avatar")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+
+
+# ──────────────────────────────────────────────
+# Modelo para request de token
+# ──────────────────────────────────────────────
+class TokenRequest(BaseModel):
+    model_config = {"populate_by_name": True}
+    room_name: str = Field(
+        default="stand-biowel",
+        alias="roomName",
+        pattern=r"^[a-zA-Z0-9_-]{1,50}$",
+    )
 
 # ──────────────────────────────────────────────
 # Endpoints REST
@@ -88,6 +116,45 @@ async def get_config():
         "has_simli": bool(SIMLI_API_KEY),
         "simli_api_key": SIMLI_API_KEY,
         "simli_face_id": SIMLI_FACE_ID,
+        "livekit_url": LIVEKIT_URL,
+    })
+
+# ──────────────────────────────────────────────
+# Token LiveKit (POST)
+# ──────────────────────────────────────────────
+@app.post("/api/token")
+async def create_token(body: TokenRequest):
+    """Genera un token de LiveKit para que el frontend se conecte a la sala."""
+    if not LIVEKIT_API_KEY or not LIVEKIT_API_SECRET:
+        return JSONResponse(
+            status_code=500,
+            content={"error": "LiveKit not configured"},
+        )
+
+    identity = f"stand-user-{secrets.token_hex(4)}"
+
+    token = (
+        AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET)
+        .with_identity(identity)
+        .with_name("Visitante Stand")
+        .with_ttl(timedelta(hours=6))
+        .with_grants(VideoGrants(
+            room_join=True,
+            room=body.room_name,
+            can_publish=True,
+            can_subscribe=True,
+            can_publish_data=True,
+        ))
+        .to_jwt()
+    )
+
+    logger.info(f"Token generado room={body.room_name} identity={identity}")
+
+    return JSONResponse({
+        "token": token,
+        "url": LIVEKIT_URL,
+        "roomName": body.room_name,
+        "identity": identity,
     })
 
 # ──────────────────────────────────────────────
