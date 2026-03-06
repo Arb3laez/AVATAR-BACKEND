@@ -16,8 +16,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
@@ -103,7 +102,7 @@ class TokenRequest(BaseModel):
 # ──────────────────────────────────────────────
 @app.get("/")
 async def root():
-    return FileResponse("static/index.html")
+    return JSONResponse({"status": "ok", "service": "Biowel Voice Agent API"})
 
 @app.get("/api/config")
 async def get_config():
@@ -397,11 +396,6 @@ async def websocket_agent(ws: WebSocket):
         logger.info("Cliente desconectado")
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
-
-# ──────────────────────────────────────────────
-# Archivos estaticos
-# ──────────────────────────────────────────────
-app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # ──────────────────────────────────────────────
 # Inicio
