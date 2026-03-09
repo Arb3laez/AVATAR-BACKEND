@@ -76,8 +76,6 @@ Reglas estrictas:
 # ──────────────────────────────────────────────
 app = FastAPI(
     title="Voice Agent con Simli Avatar",
-    root_path="/api"
-
 )
 
 app.add_middleware(

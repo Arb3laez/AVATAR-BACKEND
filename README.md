@@ -1,44 +1,162 @@
-# Biowel Back - Agente Avatar LiveKit + API REST
+# Bio - Agente Avatar de Biowel
 
-Agente de voz con avatar digital para Biowel. Incluye API REST (FastAPI) para generacion de tokens y configuracion, mas el worker de LiveKit Agents.
+> Avatar digital con IA conversacional para el stand de Biowel en Facocaribe 2026.
+
+**URL en produccion:** https://avatar.biowel.com.co/
+
+---
+
+## Que es Bio
+
+Bio es un agente conversacional con avatar digital que representa a Biowel en el Congreso Internacional de Oftalmologia Facocaribe 2026. Escucha al visitante por voz, genera una respuesta inteligente y la reproduce con voz sintetizada mientras un avatar visual mueve los labios en tiempo real (lip-sync).
+
+**Bio NO es un vendedor.** Es un asesor estrategico digital que:
+
+- Diagnostica las necesidades del visitante segun su perfil (medico, gerencial o estrategico)
+- Adapta el discurso automaticamente al tipo de interlocutor
+- Conecta la tecnologia de Biowel con indicadores clinicos y financieros
+- Genera reflexion estrategica e incentiva la conversacion con el equipo humano presente en el stand
+- Genera leads cualificados para el equipo comercial
+
+---
 
 ## Arquitectura
 
+El sistema tiene dos componentes que corren en paralelo:
+
 ```
-[Frontend] --POST /api/token--> [Este Backend (FastAPI)] --genera JWT-->
-[Frontend] --WebRTC con token--> [LiveKit Server] <-- [Agent Worker]
+                         +---------------------------------------------+
+                         |              biowel-back                    |
+                         |                                             |
+Visitante                |  +-- agent.py (LiveKit Agent) ------------+ |
+  habla   --> [Mic] ---> |  |  OpenAI Realtime (STT + LLM + TTS)    | |---> [Simli Avatar]
+                         |  |  Simli Avatar (lip-sync)               | |     (video + audio)
+                         |  +----------------------------------------+ |
+                         |                                             |
+Frontend                 |  +-- main.py (FastAPI) -------------------+ |
+  web     <-- REST ----> |  |  GET  /           Health check         | |
+                         |  |  GET  /api/config  Config publica      | |
+                         |  |  POST /api/token   Token LiveKit       | |
+                         |  |  WS   /ws/agent    Pipeline de voz     | |
+                         |  +----------------------------------------+ |
+                         +---------------------------------------------+
 ```
 
-## Estructura
+### agent.py — Agente LiveKit (componente principal)
+
+Pipeline de voz a voz en tiempo real con latencia minima:
+
+| Paso | Tecnologia | Funcion |
+|------|-----------|---------|
+| 1. Captura de audio | LiveKit + VAD | Detecta cuando el visitante habla |
+| 2. STT + LLM + TTS | OpenAI Realtime API | Transcribe, razona y sintetiza voz en un solo pipeline |
+| 3. Avatar | Simli | Renderiza video con lip-sync sincronizado al audio |
+
+Configuracion de voz:
+- **Voz:** `shimmer` (femenina, OpenAI)
+- **Temperatura:** 0.7
+- **VAD threshold:** 0.8 (filtra ruido de congreso)
+- **Reduccion de ruido:** `far_field` (ambientes ruidosos)
+- **Transcripcion:** `gpt-4o-transcribe` en espanol
+- **Eagerness:** `low` (no se interrumpe facilmente)
+
+### main.py — API REST + WebSocket (servidor FastAPI)
+
+Provee endpoints REST para el frontend y un pipeline WebSocket alternativo:
+
+| Pipeline WS | Tecnologia | Formato |
+|-------------|-----------|---------|
+| STT | OpenAI Whisper | audio blob base64 → texto |
+| LLM | GPT-4o-mini | streaming token por token |
+| TTS | ElevenLabs v2 | PCM16 a 16kHz en chunks |
+
+---
+
+## Comportamiento inteligente
+
+### Deteccion de perfil automatica
+
+Bio clasifica al visitante por sus palabras y adapta la conversacion:
+
+| Perfil | Palabras clave | Enfoque |
+|--------|---------------|---------|
+| **Medico** | consulta, diagnostico, cirugia, historia clinica | Calidad clinica, eficiencia, seguridad quirurgica |
+| **Gerencial** | indicadores, glosas, facturacion, cartera | Reduccion de glosas, control financiero |
+| **Estrategico** | rentabilidad, crecimiento, ROI, expansion | Margen operativo, ventaja competitiva |
+
+### Manejo de interrupciones y ruido
+
+Optimizado para ambientes ruidosos de congreso:
+
+- **Interrupcion valida** (el usuario entendio, pregunta algo, se despide) → Bio responde normalmente
+- **Interrupcion invalida** (ruido, voces de fondo, frases sin contexto) → Bio ignora y continua donde iba
+- Filtro de caracteres no-espanol en Whisper (descarta texto en chino/japones/coreano generado por ruido)
+
+### Manejo de objeciones
+
+| Objecion | Respuesta |
+|----------|-----------|
+| "Ya tenemos sistema" | Redirige a optimizacion estrategica |
+| "Funciona bien asi" | Plantea competitividad futura |
+| "Es costoso" | Reenfoca en el costo de la ineficiencia |
+
+### Escalamiento humano
+
+Cuando piden precios, integraciones tecnicas o propuestas formales, Bio escala al equipo humano presente en el stand.
+
+### Idioma
+
+Bio responde **exclusivamente en espanol latinoamericano**, sin importar el idioma en que le hablen.
+
+---
+
+## Estructura del proyecto
 
 ```
 biowel-back/
-├── main.py             <- API REST (FastAPI) - Token + Config
-├── agent.py            <- Agente LiveKit (OpenAI Realtime + Simli Avatar)
+├── agent.py                        # Agente LiveKit (OpenAI Realtime + Simli)
+├── main.py                         # API REST (FastAPI) + WebSocket pipeline
+├── entrypoint.sh                   # Inicia ambos componentes
 ├── docs/
-│   └── producto.txt    <- Contexto del producto
-├── static/
-│   └── index.html      <- UI basica
+│   └── producto.txt                # Informacion oficial de Biowel (contexto del agente)
 ├── requirements.txt
 ├── Dockerfile
+├── docker-compose.yml
+├── DOCUMENTACION_AGENTE_BIO.txt    # Documentacion detallada del agente
 ├── .env.example
 └── .gitignore
 ```
 
 ---
 
-## API REST - Endpoints
+## Stack tecnologico
 
-### GET /api/config
+| Capa | Tecnologia |
+|------|-----------|
+| Backend | Python 3.11, FastAPI, Uvicorn |
+| Agente de voz | LiveKit Agents SDK |
+| IA (principal) | OpenAI Realtime API (voz a voz) |
+| IA (alternativo) | OpenAI Whisper (STT) + GPT-4o-mini (LLM) |
+| TTS (alternativo) | ElevenLabs Multilingual v2 |
+| Avatar | Simli (lip-sync en tiempo real) |
+| Infraestructura | LiveKit (WebRTC), Docker |
 
-Retorna configuracion publica del agente.
+---
 
-**Request:**
+## API REST — Endpoints
+
+### `GET /`
+
+Health check.
+
+```json
+{ "status": "ok", "service": "Biowel Voice Agent API" }
 ```
-GET http://tu-servidor:8000/api/config
-```
 
-**Response (200):**
+### `GET /api/config`
+
+Configuracion publica para el frontend.
+
 ```json
 {
   "agent_name": "Asistente Virtual",
@@ -48,21 +166,13 @@ GET http://tu-servidor:8000/api/config
   "has_simli": true,
   "simli_api_key": "...",
   "simli_face_id": "...",
-  "livekit_url": "wss://diego-tc43cwwh.livekit.cloud"
+  "livekit_url": "wss://..."
 }
 ```
 
----
+### `POST /api/token`
 
-### POST /api/token
-
-Genera un token JWT de LiveKit para que el frontend se conecte a una sala.
-
-**Request:**
-```
-POST http://tu-servidor:8000/api/token
-Content-Type: application/json
-```
+Genera un token JWT de LiveKit para conectarse a una sala.
 
 **Body (acepta ambos formatos):**
 ```json
@@ -71,29 +181,29 @@ Content-Type: application/json
 ```json
 { "room_name": "stand-biowel" }
 ```
+
 Si no envias body, usa `"stand-biowel"` por defecto.
 
-**Response (200):**
+**Response:**
 ```json
 {
   "token": "eyJhbGciOiJIUzI1NiIs...",
-  "url": "wss://diego-tc43cwwh.livekit.cloud",
+  "url": "wss://...",
   "roomName": "stand-biowel",
   "identity": "stand-user-c9a52e01"
 }
 ```
 
 **Errores:**
+
 | Codigo | Descripcion |
 |--------|-------------|
 | 500 | `{"error": "LiveKit not configured"}` — Faltan LIVEKIT_API_KEY o LIVEKIT_API_SECRET |
 | 422 | Validation Error — roomName invalido (solo alfanumerico, guiones, max 50 chars) |
 
----
+### `WebSocket /ws/agent`
 
-### WebSocket /ws/agent
-
-Pipeline de voz en tiempo real: STT (Whisper) -> LLM (GPT-4o-mini) -> TTS (ElevenLabs).
+Pipeline de voz en tiempo real: STT (Whisper) → LLM (GPT-4o-mini) → TTS (ElevenLabs).
 
 **Conexion:**
 ```javascript
@@ -115,46 +225,91 @@ const ws = new WebSocket("ws://tu-servidor:8000/ws/agent");
 { "type": "audio_done" }
 ```
 
----
-
-### Swagger UI
-
-FastAPI genera documentacion interactiva automaticamente:
-```
-http://tu-servidor:8000/docs
-```
+**Swagger UI:** `http://tu-servidor:8000/docs`
 
 ---
 
-## Como exponer la API
+## Ejemplo de uso desde el frontend
 
-### 1. Local (desarrollo)
+```javascript
+// 1. Obtener token
+const res = await fetch("https://avatar.biowel.com.co/api/token", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ roomName: "stand-biowel" }),
+});
+const { token, url, roomName, identity } = await res.json();
+
+// 2. Conectar a LiveKit con el token
+const room = new Room();
+await room.connect(url, token);
+```
+
+---
+
+## Variables de entorno
+
+| Variable | Requerida | Descripcion |
+|----------|-----------|-------------|
+| `LIVEKIT_URL` | Si | URL del servidor LiveKit (`wss://...`) |
+| `LIVEKIT_API_KEY` | Si | API Key de LiveKit |
+| `LIVEKIT_API_SECRET` | Si | API Secret de LiveKit |
+| `OPENAI_API_KEY` | Si | Key de OpenAI (Realtime + Whisper + GPT) |
+| `SIMLI_API_KEY` | No | Key de Simli (avatar) |
+| `SIMLI_FACE_ID` | No | Face ID de Simli |
+| `ELEVENLABS_API_KEY` | No | Key de ElevenLabs (TTS en pipeline WebSocket) |
+| `ELEVENLABS_VOICE_ID` | No | Voice ID de ElevenLabs |
+| `AGENT_NAME` | No | Nombre del agente (default: `"Asistente Virtual"`) |
+| `AGENT_LANGUAGE` | No | Idioma (default: `"es"`) |
+
+---
+
+## Setup local
 
 ```bash
+# 1. Crear entorno virtual
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+venv\Scripts\activate     # Windows
+
+# 2. Instalar dependencias
+pip install -r requirements.txt
+
+# 3. Configurar variables
+cp .env.example .env
+# Editar .env con tus keys reales
+
+# 4. Ejecutar API
 python main.py
-# API disponible en http://localhost:8000
+# API en http://localhost:8000
 # Docs en http://localhost:8000/docs
+
+# 5. Ejecutar agente LiveKit (en otra terminal)
+python agent.py start
 ```
 
-### 2. Red local (otros dispositivos en tu WiFi)
+---
 
-Ya funciona con `host="0.0.0.0"`. Busca tu IP local:
-```bash
-# Windows
-ipconfig
-# Linux/Mac
-ifconfig
-```
-Accede desde otro dispositivo: `http://192.168.x.x:8000/api/token`
+## Despliegue
 
-### 3. Docker (local o servidor)
+### Docker
 
 ```bash
 docker build -t biowel-api .
 docker run --env-file .env -p 8000:8000 -p 8081:8081 biowel-api
 ```
 
-### 4. AWS ECS/Fargate
+### Docker Compose
+
+```bash
+docker-compose up --build
+```
+
+Puertos expuestos:
+- `8000` — API REST (FastAPI)
+- `8081` — Health check del agente LiveKit
+
+### AWS ECS/Fargate
 
 ```bash
 # Build y push a ECR
@@ -168,7 +323,7 @@ docker push TU-ACCOUNT.dkr.ecr.us-east-1.amazonaws.com/biowel-api:latest
 
 En la Task Definition de ECS agregar las variables de entorno y exponer puerto 8000.
 
-### 5. AWS EC2 directo
+### AWS EC2
 
 ```bash
 ssh ubuntu@tu-ec2-ip
@@ -176,14 +331,13 @@ git clone https://github.com/TU-USUARIO/biowel-back.git && cd biowel-back
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env && nano .env  # poner keys reales
-
-# Ejecutar
-python main.py  # o con systemd para que corra 24/7
+python main.py
 ```
 
-#### Systemd Service (EC2, corre 24/7)
+#### Systemd (corre 24/7 en EC2)
 
 Crear `/etc/systemd/system/biowel-api.service`:
+
 ```ini
 [Unit]
 Description=Biowel API + Agent
@@ -209,15 +363,15 @@ sudo systemctl start biowel-api
 sudo journalctl -u biowel-api -f  # ver logs
 ```
 
-### 6. Nginx reverse proxy (SSL/dominio)
+### Nginx reverse proxy (SSL)
 
 ```nginx
 server {
     listen 443 ssl;
-    server_name api.biowel.com;
+    server_name avatar.biowel.com.co;
 
-    ssl_certificate /etc/letsencrypt/live/api.biowel.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/api.biowel.com/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/avatar.biowel.com.co/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/avatar.biowel.com.co/privkey.pem;
 
     location / {
         proxy_pass http://127.0.0.1:8000;
@@ -238,79 +392,19 @@ server {
 
 ```bash
 sudo apt install certbot python3-certbot-nginx
-sudo certbot --nginx -d api.biowel.com
+sudo certbot --nginx -d avatar.biowel.com.co
 ```
 
-### 7. Caddy reverse proxy (SSL automatico)
+### Caddy (SSL automatico)
 
 ```
-api.biowel.com {
+avatar.biowel.com.co {
     reverse_proxy localhost:8000
 }
 ```
 
-### 8. ngrok (exponer temporal para pruebas)
+### ngrok (pruebas temporales)
 
 ```bash
 ngrok http 8000
-# Te da una URL publica tipo https://xxxx.ngrok-free.app
-```
-
----
-
-## Ejemplo de uso desde el frontend
-
-```javascript
-// Obtener token
-const res = await fetch("https://api.biowel.com/api/token", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ roomName: "stand-biowel" }),
-});
-const { token, url, roomName, identity } = await res.json();
-
-// Conectar a LiveKit con el token
-const room = new Room();
-await room.connect(url, token);
-```
-
----
-
-## Variables de Entorno
-
-| Variable | Requerida | Descripcion |
-|----------|-----------|-------------|
-| `LIVEKIT_URL` | Si | URL del servidor LiveKit (wss://...) |
-| `LIVEKIT_API_KEY` | Si | API Key de LiveKit |
-| `LIVEKIT_API_SECRET` | Si | API Secret de LiveKit |
-| `OPENAI_API_KEY` | Si | Key de OpenAI (Realtime + Whisper) |
-| `SIMLI_API_KEY` | No | Key de Simli (avatar) |
-| `SIMLI_FACE_ID` | No | Face ID de Simli |
-| `ELEVENLABS_API_KEY` | No | Key de ElevenLabs (TTS en main.py) |
-| `ELEVENLABS_VOICE_ID` | No | Voice ID de ElevenLabs |
-| `AGENT_NAME` | No | Nombre del agente (default: "Asistente Virtual") |
-| `AGENT_LANGUAGE` | No | Idioma (default: "es") |
-
-## Setup Local
-
-```bash
-# 1. Crear entorno virtual
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-venv\Scripts\activate     # Windows
-
-# 2. Instalar dependencias
-pip install -r requirements.txt
-
-# 3. Configurar variables
-cp .env.example .env
-# Editar .env con tus keys reales
-
-# 4. Ejecutar API
-python main.py
-# API en http://localhost:8000
-# Docs en http://localhost:8000/docs
-
-# 5. Ejecutar agente LiveKit (en otra terminal)
-python agent.py start
 ```
